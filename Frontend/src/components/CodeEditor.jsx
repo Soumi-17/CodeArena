@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import Editor from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
+import LanguageDropdown from "./LanguageDropdown";
 // import { useAuth } from '../context/AuthContext'; // adjust path if needed
 
 const CodeEditor = ({ currentQuestion }) => {
@@ -77,16 +78,18 @@ const CodeEditor = ({ currentQuestion }) => {
       const response = await axios.post(
         "http://localhost:4000/api/compiler/run",
         {
-          source_code: code,
-          language
+          code,
+          language,
+          input: ""
         }
       );
 
       const data = response.data;
 
       const finalOutput =
-        data.output ||
-        data.error ||
+        data.data?.stdout ||
+        data.data?.stderr ||
+        data.data?.compile_output ||
         "No output";
 
       setOutput(finalOutput);
@@ -94,7 +97,7 @@ const CodeEditor = ({ currentQuestion }) => {
       outputRef.current = finalOutput;
 
       setMetaText(
-        `${data.cpuTime || 0}s • ${data.memory || 0}`
+        `${data.data?.time || 0}s • ${data.data?.memory || 0} KB`
       );
 
       setStatus("success");
@@ -167,28 +170,27 @@ const CodeEditor = ({ currentQuestion }) => {
   }
 
   return (
-    <main className="h-full min-h-0 flex flex-col bg-[#0b1220]/70 overflow-hidden">
+    <main className="h-full min-h-0 flex flex-col bg-[#0b1220]/70 overflow-visible">
 
       {/* Toolbar */}
-      <div className="h-16 shrink-0 border-b border-white/10 bg-[#050816]/70 backdrop-blur-xl px-5 flex items-center justify-between gap-4">
+      <div className="relative z-50 h-16 shrink-0 border-b border-white/10 bg-[#050816]/70 backdrop-blur-xl px-5 flex items-center justify-between gap-4 overflow-visible">
         <div>
           <p className="text-[11px] uppercase tracking-[0.24em] text-[#A1A1AA] font-semibold">Editor</p>
           <h2 className="mt-1 text-lg font-semibold text-white">
             {currentQuestion ? `Q${currentQuestion.id}: ${currentQuestion.title}` : 'Code Playground'}
           </h2>
         </div>
-        <select
-          value={language}
-          onChange={(e) => setLanguage(e.target.value)}
-          className="rounded-xl border border-white/10 bg-[#111827] px-3 py-2 text-sm text-white outline-none"
-        >
-          <option value="python3">Python</option>
-          <option value="nodejs">JavaScript</option>
-          <option value="java">Java</option>
-          <option value="cpp17">C++</option>
-          <option value="c">C</option>
-          <option value="sql">SQL</option>
-        </select>
+        <div className="relative group">
+          {/* Glow Border */}
+          <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-violet-600/40 via-fuchsia-500/30 to-indigo-500/30 blur-md opacity-0 transition-all duration-300 group-hover:opacity-100" />
+
+          <LanguageDropdown
+            language={language}
+            setLanguage={setLanguage}
+          />
+
+
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={clearEditor}

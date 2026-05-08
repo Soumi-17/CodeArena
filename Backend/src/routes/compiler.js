@@ -1,102 +1,45 @@
 import express from "express";
-import axios from "axios";
-import sqlite3 from "sqlite3";
+import { submitCode, LANGUAGE_IDS } from "../lib/judge0.js";
 
 const router = express.Router();
 
-const languageMap = {
-  python3: "4",
-  nodejs: "4",
-  java: "4",
-  cpp17: "0",
-  c: "5"
-};
-
 router.post("/run", async (req, res) => {
   try {
-    const { source_code, language } = req.body;
+    const { code, language, input } = req.body;
 
-    // =========================
-    // SQL Execution (Local SQLite)
-    // =========================
-    if (language === "sql") {
+    const language_id = LANGUAGE_IDS[language];
 
-      const db = new sqlite3.Database(":memory:");
-
-      db.serialize(() => {
-
-        db.exec(source_code, function (err) {
-
-          if (err) {
-            return res.status(500).json({
-              error: err.message
-            });
-          }
-
-          // Try getting rows if SELECT exists
-          const match = source_code.match(/SELECT .*?;/is);
-
-          if (match) {
-
-            db.all(match[0], [], (err, rows) => {
-
-              if (err) {
-                return res.status(500).json({
-                  error: err.message
-                });
-              }
-
-              res.json({
-                output: JSON.stringify(rows, null, 2)
-              });
-
-              db.close();
-            });
-
-          } else {
-
-            res.json({
-              output: "SQL executed successfully"
-            });
-
-            db.close();
-          }
-
-        });
-
+    if (!language_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Unsupported language",
       });
-
-      return;
     }
 
-    // =========================
-    // JDoodle Languages
-    // =========================
-
-    const response = await axios.post(
-      "https://api.jdoodle.com/v1/execute",
-      {
-        clientId: process.env.JDOODLE_CLIENT_ID,
-        clientSecret: process.env.JDOODLE_CLIENT_SECRET,
-
-        script: source_code,
-
-        language: language,
-
-        versionIndex: languageMap[language]
-      }
-    );
-
-    res.json(response.data);
-
-  } catch (err) {
-
-    console.log(err.response?.data || err.message);
-
-    res.status(500).json({
-      error: err.response?.data || err.message
+    const result = await submitCode({
+      source_code: code,
+      language_id,
+      stdin: input,
     });
 
+    return res.json({
+      success: true,
+      data: {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        compile_output: result.compile_output,
+        status: result.status,
+        time: result.time,
+        memory: result.memory,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Code execution failed",
+    });
   }
 });
 
