@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import QuestionsPanel, { questions } from '../../components/QuestionsPanel';
+import QuestionsPanel from '../../components/QuestionsPanel';
 import CodeEditor from '../../components/CodeEditor';
 
 const PythonPracticeApp = () => {
-  const [currentQuestion, setCurrentQuestion] = useState(questions[0]);
+
+  const [currentQuestion, setCurrentQuestion] = useState(null);
 
   return (
     <div
@@ -15,8 +16,11 @@ const PythonPracticeApp = () => {
         `
       }}
     >
+
       <QuestionsPanel onQuestionChange={setCurrentQuestion} />
+
       <CodeEditor currentQuestion={currentQuestion} />
+
     </div>
   );
 };

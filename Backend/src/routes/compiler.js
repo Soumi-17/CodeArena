@@ -1,5 +1,5 @@
 import express from "express";
-import { submitCode, LANGUAGE_IDS } from "../lib/judge0.js";
+import { submitCode, LANGUAGE_IDS } from "../api/judge0.js";
 
 const router = express.Router();
 
