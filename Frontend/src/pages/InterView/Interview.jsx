@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import * as faceapi from "face-api.js";
-import axios from "axios";
+import vapi from "../../lib/vapi";
 
 const CustomModal = ({ isOpen, title, message, type, onClose, onConfirm }) => {
     return (
@@ -151,9 +151,6 @@ const Interview = () => {
     const [candidateSpeaking, setCandidateSpeaking] = useState(false);
     const [currentQuestion, setCurrentQuestion] = useState("");
     const [candidateAnswer, setCandidateAnswer] = useState("");
-    const [evaluation, setEvaluation] = useState(null);
-    const [isEvaluating, setIsEvaluating] = useState(false);
-    const recognitionRef = useRef(null);
     const [sessionStarted, setSessionStarted] = useState(false);
     const videoRef = useRef(null);
     const streamRef = useRef(null);
@@ -161,253 +158,11 @@ const Interview = () => {
     const isEndingInterview = useRef(false);
     const [isModelsLoaded, setIsModelsLoaded] = useState(false);
     const [cameraError, setCameraError] = useState("");
+    const [callActive, setCallActive] = useState(false);
+    const [liveTranscript, setLiveTranscript] = useState("");
 
     const [isSetupModalOpen, setIsSetupModalOpen] = useState(true);
 
-    const generateFirstQuestion = async () => {
-
-        try {
-
-            const res = await axios.post(
-                "http://localhost:4000/api/ai-interview/start",
-                {
-                    role: "Frontend Developer",
-                    difficulty: "Medium",
-                    techStack:
-                        "React, JavaScript, Tailwind CSS",
-                }
-            );
-            console.log(res.data);
-
-            const question =
-                res.data?.question ||
-                "Tell me about yourself.";
-
-            setCurrentQuestion(question);
-
-            speakText(question);
-
-        } catch (error) {
-
-            console.log(error);
-        }
-    };
-
-    const speakText = async (text) => {
-
-        console.log("AI SPEAKING:", text);
-    
-        if (!text || isMuted) return;
-    
-        const synth = window.speechSynthesis;
-    
-        synth.cancel();
-    
-        const loadVoices = () => {
-    
-            return new Promise((resolve) => {
-    
-                let voices = synth.getVoices();
-    
-                if (voices.length) {
-    
-                    resolve(voices);
-    
-                    return;
-                }
-    
-                synth.onvoiceschanged = () => {
-    
-                    voices = synth.getVoices();
-    
-                    resolve(voices);
-                };
-            });
-        };
-    
-        const voices = await loadVoices();
-    
-        const utterance =
-            new SpeechSynthesisUtterance(text);
-    
-        utterance.lang = "en-US";
-    
-        utterance.rate = 1;
-    
-        utterance.pitch = 1;
-    
-        utterance.volume = 1;
-    
-        const englishVoice =
-            voices.find(
-                (v) =>
-                    v.lang.includes("en")
-            ) || voices[0];
-    
-        if (englishVoice) {
-            utterance.voice = englishVoice;
-        }
-    
-        utterance.onstart = () => {
-    
-            console.log("Speech started");
-    
-            setAiSpeaking(true);
-        };
-    
-        utterance.onend = () => {
-    
-            console.log("Speech ended");
-    
-            setAiSpeaking(false);
-    
-            startSpeechRecognition();
-        };
-    
-        utterance.onerror = (e) => {
-    
-            console.log(
-                "Speech error:",
-                e
-            );
-    
-            setAiSpeaking(false);
-        };
-        console.log(
-            "Available voices:",
-            voices
-         );
-    
-        synth.speak(utterance);
-    };
-
-
-
-    const startSpeechRecognition = () => {
-
-        if (recognitionRef.current) {
-            recognitionRef.current.stop();
-        }
-
-        const SpeechRecognition =
-            window.SpeechRecognition ||
-            window.webkitSpeechRecognition;
-
-        if (!SpeechRecognition) {
-
-            alert(
-                "Speech Recognition not supported"
-            );
-
-            return;
-        }
-
-        const recognition = new SpeechRecognition();
-
-        recognitionRef.current = recognition;
-
-        recognition.continuous = false;
-
-        recognition.interimResults = true;
-
-        recognition.lang = "en-US";
-
-        recognition.onstart = () => {
-            setCandidateSpeaking(true);
-        };
-
-        let finalTranscript = "";
-
-        recognition.onresult = (event) => {
-
-            let transcript = "";
-
-            for (
-                let i = event.resultIndex;
-                i < event.results.length;
-                i++
-            ) {
-
-                transcript +=
-                    event.results[i][0].transcript;
-
-                if (event.results[i].isFinal) {
-                    finalTranscript = transcript;
-                }
-            }
-
-            setCandidateAnswer(transcript);
-        };
-
-        recognition.onerror = (err) => {
-            console.log(err);
-        };
-
-        recognition.onend = () => {
-
-            setCandidateSpeaking(false);
-
-            if (
-                finalTranscript.trim().length > 10
-            ) {
-                submitAnswer(finalTranscript);
-            }
-        };
-
-        recognition.start();
-    };
-
-    const submitAnswer = async (
-        transcriptAnswer
-    ) => {
-
-        try {
-
-            setIsEvaluating(true);
-
-            const res = await axios.post(
-                "http://localhost:4000/api/ai-interview/evaluate",
-                {
-                    question: currentQuestion,
-                    answer:
-                        transcriptAnswer?.trim() ||
-                        candidateAnswer.trim(),
-                    role: "Frontend Developer",
-                }
-            );
-
-            const result = res.data?.result;
-
-            if (!result) return;
-
-            setEvaluation(result);
-
-            if (result.followUpQuestion) {
-
-                setCurrentQuestion(
-                    result.followUpQuestion
-                );
-
-                setCandidateAnswer("");
-
-                setTimeout(() => {
-
-                    speakText(
-                        result.followUpQuestion
-                    );
-
-                }, 1500);
-            }
-
-        } catch (error) {
-
-            console.log(error);
-
-        } finally {
-
-            setIsEvaluating(false);
-        }
-    };
 
     const [modalConfig, setModalConfig] = useState({
         isOpen: false,
@@ -442,43 +197,131 @@ const Interview = () => {
         noFace: 0,
         fullscreen: 0,
     });
+
     const startActualInterview = async () => {
 
         setIsSetupModalOpen(false);
-
+    
         setSessionStarted(true);
-
+    
         setStatus("active");
-
-        const synth = window.speechSynthesis;
-
-        synth.cancel();
-
-        synth.resume();
-
-        const unlockUtterance =
-            new SpeechSynthesisUtterance(" ");
-
-        unlockUtterance.volume = 0;
-
-        synth.speak(unlockUtterance);
-
-        setTimeout(() => {
-
-            generateFirstQuestion();
-
-        }, 500);
-
+    
+        startVapiInterview();
+    
         try {
-
+    
             await document.documentElement.requestFullscreen();
-
+    
         } catch (err) {
-
-            console.warn("Fullscreen rejected");
-
+    
+            console.warn(
+                "Fullscreen rejected"
+            );
         }
     };
+
+    const startVapiInterview = async () => {
+
+        try {
+    
+            await vapi.start(
+                import.meta.env
+                    .VITE_VAPI_ASSISTANT_ID
+            );
+    
+            setCallActive(true);
+    
+        } catch (error) {
+    
+            console.log(error);
+        }
+    };
+
+    useEffect(() => {
+
+        vapi.on("call-start", () => {
+    
+            console.log("CALL STARTED");
+    
+        });
+    
+        vapi.on("call-end", () => {
+    
+            console.log("CALL ENDED");
+    
+            setCallActive(false);
+    
+        });
+    
+        vapi.on("speech-start", () => {
+    
+            console.log("AI SPEAKING");
+    
+            setAiSpeaking(true);
+        });
+    
+        vapi.on("speech-end", () => {
+    
+            console.log("AI STOPPED");
+    
+            setAiSpeaking(false);
+        });
+    
+        vapi.on("message", (message) => {
+    
+            console.log(
+                "VAPI MESSAGE:",
+                message
+            );
+    
+            if (
+                message.type === "transcript"
+            ) {
+    
+                if (
+                    message.role === "assistant"
+                ) {
+    
+                    setCurrentQuestion(
+                        message.transcript
+                    );
+                }
+    
+                if (
+                    message.role === "user"
+                ) {
+    
+                    setCandidateSpeaking(true);
+    
+                    setCandidateAnswer((prev) =>
+                        prev
+                            ? `${prev} ${message.transcript}`
+                            : message.transcript
+                    );
+    
+                    setTimeout(() => {
+    
+                        setCandidateSpeaking(false);
+    
+                    }, 1200);
+                }
+            }
+        });
+    
+        vapi.on("error", (e) => {
+    
+            console.log(
+                "VAPI ERROR:",
+                e
+            );
+        });
+    
+        return () => {
+    
+            vapi.stop();
+        };
+    
+    }, []);
 
 
 
@@ -651,10 +494,6 @@ const Interview = () => {
 
             isEndingInterview.current = true;
 
-            if (recognitionRef.current) {
-                recognitionRef.current.stop();
-            }
-
             setStatus("ended");
 
             if (streamRef.current) {
@@ -671,6 +510,8 @@ const Interview = () => {
 
         } finally {
             window.speechSynthesis.cancel();
+
+            await vapi.stop();
 
             navigate("/drive");
         }
@@ -855,50 +696,6 @@ const Interview = () => {
                         AI Interview in Sessions...
                     </p>
 
-
-                    {
-                        isEvaluating && (
-
-                            <div className="w-full max-w-4xl self-center mb-8">
-
-                                <div className="rounded-3xl border border-indigo-500/20 bg-white/[0.04] backdrop-blur-xl p-6">
-
-                                    <p className="text-indigo-300 animate-pulse">
-                                        AI is evaluating your answer...
-                                    </p>
-
-                                </div>
-
-                            </div>
-                        )
-                    }
-
-                    {/* Evaluation */}
-                    {
-                        evaluation && (
-
-                            <div className="w-full max-w-4xl self-center mb-8">
-
-                                <div className="rounded-3xl border border-violet-500/20 bg-white/[0.04] backdrop-blur-xl p-6">
-
-                                    <p className="text-xs uppercase tracking-[0.2em] text-violet-300 mb-3">
-                                        AI Evaluation
-                                    </p>
-
-                                    <p className="text-lg font-semibold mb-3">
-                                        Score: {evaluation.score}/10
-                                    </p>
-
-                                    <p className="text-white/70">
-                                        {evaluation.feedback}
-                                    </p>
-
-                                </div>
-
-                            </div>
-                        )
-                    }
-
                 </div>
 
                 {/* ── Interview panels ── */}
@@ -1043,7 +840,15 @@ const Interview = () => {
                     {/* Mute */}
                     <motion.button
                         whileTap={{ scale: 0.91 }}
-                        onClick={() => setIsMuted((m) => !m)}
+                        onClick={() => {
+
+                            const nextMuted =
+                                !isMuted;
+                        
+                            setIsMuted(nextMuted);
+                        
+                            vapi.setMuted(nextMuted);
+                        }}
                         aria-label={isMuted ? "Unmute microphone" : "Mute microphone"}
                         className={`w-14 h-14 rounded-full flex items-center justify-center border outline-none transition-colors duration-200
               ${isMuted
