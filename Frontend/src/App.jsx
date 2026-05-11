@@ -46,7 +46,7 @@ function App() {
       <Route path="/assessment" element={<Assessment />} />
       <Route path="/domainselector" element={<DomainSelectorPage />} />
       {/* <Route path="/dashboard" element={<Dashboard />} /> */}
-      <Route path="/profile" element={<ProfileDashboard />} />
+      {/* <Route path="/profile" element={<ProfileDashboard />} /> */}
       <Route path="/login" element={<AuthPage />} />
       <Route path="/forgot" element={<ForgotPassword />} />
 
@@ -74,6 +74,15 @@ function App() {
             <PracticeSet />
           </ProtectedRoute>
         } 
+      />
+
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute>
+            <ProfileDashboard />
+          </ProtectedRoute>
+        }
       />
 
 
