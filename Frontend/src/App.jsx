@@ -62,7 +62,6 @@ function App() {
       <Route path="/admindashboard" element={<AdminDash />} />
 
       <Route path="/admindash" element={<AdminDashboard2 />} />
-      <Route path="/candidate" element={<CandidatesPage />} />
       <Route path="/admindrive" element={<AdminDrive />} />
 
       <Route path="/interview" element={<Interview/>} />
