@@ -685,6 +685,7 @@ export default function UserProfileForm() {
 
               {/* Skip Button Only Step 1 */}
               {step === 1 && (
+                <a href="/" >
                 <button
                   type="button"
                   onClick={() => navigate("/")}
@@ -692,6 +693,8 @@ export default function UserProfileForm() {
                 >
                   Skip Now
                 </button>
+                </a>
+                
               )}
             </div>
 
