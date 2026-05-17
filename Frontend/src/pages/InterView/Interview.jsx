@@ -484,7 +484,7 @@ const Interview = () => {
         const faceDetector = await FaceDetector.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite`,
-            delegate: "CPU",
+            delegate: "GPU",
           },
           runningMode: "VIDEO",
           minDetectionConfidence: 0.75,
@@ -493,7 +493,7 @@ const Interview = () => {
         const objectDetector = await ObjectDetector.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite`,
-            delegate: "CPU",
+            delegate: "GPU",
           },
           scoreThreshold: 0.3,
           runningMode: "VIDEO",
@@ -761,7 +761,7 @@ const Interview = () => {
     const loop = async () => {
       if (!isRunning) return;
       await performAnalysis();
-      analysisTimeoutRef.current = setTimeout(loop, 500);
+      analysisTimeoutRef.current = setTimeout(loop, 150);
     };
 
     loop();

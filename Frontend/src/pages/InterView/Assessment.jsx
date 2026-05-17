@@ -255,7 +255,7 @@ const Assessment = () => {
   const audioAnalyserRef = useRef(null);
   const audioContextRef = useRef(null);
 
-  const isTerminating = useRef(false); // New flag to force-bypass listeners during exit
+  const isTerminating = useRef(false);
 
   const violations = useRef({
     brightness: 0,
@@ -403,10 +403,9 @@ const Assessment = () => {
   }, [status, timeLeft]);
 
   const submitAssessment = async (finalStatus = "Completed", reason = "") => {
-    isTerminating.current = true; // Block focus loss events during exit
+    isTerminating.current = true;
     setStatus("idle");
 
-    // Robust Fullscreen Exit Method
     const doc = window.document;
     if (
       doc.fullscreenElement ||
@@ -498,7 +497,7 @@ const Assessment = () => {
         const faceDetector = await FaceDetector.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite`,
-            delegate: "CPU",
+            delegate: "GPU",
           },
           runningMode: "VIDEO",
           minDetectionConfidence: 0.75,
@@ -507,7 +506,7 @@ const Assessment = () => {
         const objectDetector = await ObjectDetector.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite`,
-            delegate: "CPU",
+            delegate: "GPU",
           },
           scoreThreshold: 0.3,
           runningMode: "VIDEO",
@@ -602,7 +601,6 @@ const Assessment = () => {
           return;
         }
 
-        // Dynamic Cooldown Check
         const checkCooldown = () =>
           Date.now() - lastViolationTime.current < 4000;
 
@@ -768,13 +766,11 @@ const Assessment = () => {
           }
         }
 
-        // INSTANT PHONE TRIGGER (No more frame buffer delays)
         if (isPhoneDetected) {
           if (!checkCooldown()) {
             violations.current.phone += 1;
             lastViolationTime.current = Date.now();
 
-            // Give 2 warnings, terminate on the 3rd attempt
             if (violations.current.phone >= 3) {
               terminateSession(
                 "Use of an electronic device (cell phone) detected.",
@@ -798,7 +794,7 @@ const Assessment = () => {
     const loop = async () => {
       if (!isRunning) return;
       await performAnalysis();
-      analysisTimeoutRef.current = setTimeout(loop, 500);
+      analysisTimeoutRef.current = setTimeout(loop, 150);
     };
     loop();
 
@@ -810,10 +806,9 @@ const Assessment = () => {
 
   useEffect(() => {
     if (status !== "active") return;
-    isTerminating.current = false; // Reset the bypass on start
+    isTerminating.current = false;
 
     const handleFocusLoss = (reason) => {
-      // Safely ignore tab switches that happen BECAUSE we are exiting full screen
       if (isTerminating.current) return;
 
       const now = Date.now();
