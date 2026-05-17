@@ -211,6 +211,10 @@ const Assessment = () => {
   const navigate = useNavigate();
   const drive = location.state?.drive;
 
+  const photoSrc = user?.picture
+    ? `http://localhost:4000${user.picture}`
+    : user?.picture || null; 
+
   const [timeLeft, setTimeLeft] = useState(
     drive ? drive.timeDurationInMin * 60 : 0,
   );
@@ -232,6 +236,10 @@ const Assessment = () => {
 
   const missingFaceFrames = useRef(0);
   const maskFrames = useRef(0);
+  const noiseFrames = useRef(0);
+  const audioAnalyserRef = useRef(null);
+  const audioContextRef = useRef(null);
+
   const violations = useRef({
     brightness: 0,
     mask: 0,
@@ -239,6 +247,7 @@ const Assessment = () => {
     noFace: 0,
     tab: 0,
     keyboard: 0,
+    noise: 0,
   });
   const lastViolationTime = useRef(0);
   const isAnalyzing = useRef(false);
@@ -458,6 +467,17 @@ const Assessment = () => {
         }
         streamRef.current = stream;
         if (videoRef.current) videoRef.current.srcObject = stream;
+
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const audioCtx = new AudioContext();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+
+        audioAnalyserRef.current = analyser;
+        audioContextRef.current = audioCtx;
+
         stream.getTracks().forEach((track) => {
           track.onended = () => {
             if (status === "active" && isComponentActive)
@@ -481,6 +501,12 @@ const Assessment = () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
+      }
+      if (
+        audioContextRef.current &&
+        audioContextRef.current.state !== "closed"
+      ) {
+        audioContextRef.current.close();
       }
     };
   }, [status]);
@@ -531,6 +557,42 @@ const Assessment = () => {
           }
           isAnalyzing.current = false;
           return;
+        }
+
+        if (audioAnalyserRef.current) {
+          const dataArray = new Uint8Array(
+            audioAnalyserRef.current.frequencyBinCount,
+          );
+          audioAnalyserRef.current.getByteFrequencyData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+          const avgVolume = sum / dataArray.length;
+
+          if (avgVolume > 35) {
+            noiseFrames.current += 1;
+
+            if (noiseFrames.current >= 3) {
+              if (!isCooldown) {
+                violations.current.noise += 1;
+                lastViolationTime.current = Date.now();
+                noiseFrames.current = 0;
+
+                if (violations.current.noise >= 4) {
+                  terminateSession(
+                    "Continuous background noise, talking, or music detected.",
+                  );
+                } else {
+                  triggerAlert(
+                    "Audio Violation",
+                    `Warning ${violations.current.noise}/3: High background noise or talking detected! Please remain in a quiet environment.`,
+                    "danger",
+                  );
+                }
+              }
+            }
+          } else {
+            noiseFrames.current = 0;
+          }
         }
 
         let faceCount = 0;
@@ -773,13 +835,26 @@ const Assessment = () => {
           </p>
         </div>
 
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-3">
-          <span className="text-lg sm:text-xl font-bold text-indigo-400 hidden sm:block">
+        <div className="flex items-center gap-3">
+          <div className="p-[2px] rounded-full bg-gradient-to-tr from-indigo-500 via-purple-500 to-indigo-900 shadow-[0_0_15px_rgba(139,92,246,0.4)]">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full overflow-hidden bg-[#0f172a] flex items-center justify-center text-base font-bold text-white">
+              {photoSrc ? (
+                <img
+                  src={photoSrc}
+                  alt="Profile"
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                `${user?.firstName?.charAt(0) || ""}${user?.lastName?.charAt(0) || ""}`.toUpperCase()
+              )}
+            </div>
+          </div>
+          
+          <span className="text-lg sm:text-xl font-bold text-white hidden sm:block">
             {user?.firstName} {user?.lastName}
           </span>
         </div>
-
-        <div className="w-[100px] hidden sm:block"></div>
       </div>
 
       <main className="relative z-10 px-4 pb-4 lg:px-6 lg:pb-6 grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-80px)] max-w-[1600px] mx-auto">
