@@ -2,20 +2,9 @@ import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import QuestionCard from './QuestionCard';
+import QuestionCard from './QuestionCardPrac';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-
-// ─── QuestionsPanelPrac ───────────────────────────────────────────────────────
-// Props:
-//   domain, difficulty        — from PracticeSet (via nav state)
-//   questions, currentIndex   — controlled from PracticeSet
-//   answers                   — MCQ selections { index: string }
-//   codes, outputs            — coding state { index: string } from PracticeSet
-//   onQuestionsLoaded(qs)     — notify parent when questions arrive
-//   onNavigate(index)         — change active question
-//   onSelectAnswer(i, option) — store MCQ answer
-// ─────────────────────────────────────────────────────────────────────────────
 
 const QuestionsPanelPrac = ({
   domain,
@@ -28,97 +17,71 @@ const QuestionsPanelPrac = ({
   onQuestionsLoaded,
   onNavigate,
   onSelectAnswer,
-  onSubmitComplete, 
+  onSubmitComplete,
 }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  // Analyze state — only for CODING questions
   const [analyzing, setAnalyzing] = useState(false);
   const [hint, setHint] = useState('');
-
-  // Final submit state
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState(null);
 
-    // ── Fetch questions ──────────────────────────────────────────────────────
-    const fetchQuestions = useCallback(async () => {
-        setLoading(true);
-        setError('');
-        setHint('');
-        setSubmitResult(null);
-
-        try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`${API_URL}/api/ai/practice-generate`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`, // ← send token
-                },
-                body: JSON.stringify({ domain, difficulty }),
-            });
-            const data = await res.json();
-
-            if (data.success) {
-                onQuestionsLoaded(data.questions);
-            } else {
-                setError('Failed to generate questions.');
-            }
-        } catch (err) {
-            console.error(err);
-            setError('Unable to connect to server.');
-        } finally {
-            setLoading(false);
-        }
-    }, [domain, difficulty, onQuestionsLoaded]);
-
-  useEffect(() => {
-    fetchQuestions();
-  }, []);
-
-  // Clear hint when navigating to a different question
-  useEffect(() => {
+  const fetchQuestions = useCallback(async () => {
+    setLoading(true);
+    setError('');
     setHint('');
-  }, [currentIndex]);
+    setSubmitResult(null);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/ai/practice-generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ domain, difficulty }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        onQuestionsLoaded(data.questions);
+      } else {
+        setError('Failed to generate questions.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Unable to connect to server.');
+    } finally {
+      setLoading(false);
+    }
+  }, [domain, difficulty, onQuestionsLoaded]);
 
-  // ── AI Analyze — CODING questions only ───────────────────────────────────
+  useEffect(() => { fetchQuestions(); }, []);
+  useEffect(() => { setHint(''); }, [currentIndex]);
+
   const handleAnalyze = async () => {
     const q = questions[currentIndex];
     if (!q || q.type !== 'CODING') return;
-
     setAnalyzing(true);
     setHint('');
-
     try {
       const token = localStorage.getItem('token');
       const res = await axios.post(
         `${API_URL}/api/practice/analyze`,
-        {
-          type: 'CODING',
-          question: q.question,
-          code: codes[currentIndex] || '',
-          output: outputs[currentIndex] || '',
-          language: q.language || 'python3',
-        },
+        { type: 'CODING', question: q.question, code: codes[currentIndex] || '', output: outputs[currentIndex] || '', language: q.language || 'python3' },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-
       setHint(res.data.hint || 'No hints available.');
-    } catch (err) {
+    } catch {
       setHint('Failed to get AI hints. Please try again.');
     } finally {
       setAnalyzing(false);
     }
   };
 
-  // ── Final Submit — last question only ────────────────────────────────────
   const handleFinalSubmit = async () => {
     setSubmitting(true);
-
     try {
       const token = localStorage.getItem('token');
-
       const attempts = questions.map((q, i) => ({
         questionIndex: i,
         question: q.question,
@@ -130,33 +93,23 @@ const QuestionsPanelPrac = ({
         language: q.language || 'python3',
         output: outputs[i] || '',
       }));
-
       const res = await axios.post(
         `${API_URL}/api/practice/submit`,
         { domain, difficulty, attempts },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-
-      setSubmitResult({
-        aiReview: res.data.submission.aiReview,
-        stats: res.data.stats,
-      });
+      setSubmitResult({ aiReview: res.data.submission.aiReview, stats: res.data.stats });
       onSubmitComplete();
     } catch (err) {
       console.error('Submit error:', err);
-      setSubmitResult({
-        aiReview: 'Submission failed. Please try again.',
-        stats: null,
-      });
+      setSubmitResult({ aiReview: 'Submission failed. Please try again.', stats: null });
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ── Derived values ────────────────────────────────────────────────────────
   const mcqQuestions = questions.filter((q) => q.type === 'MCQ');
   const codingQuestions = questions.filter((q) => q.type === 'CODING');
-
   const mcqScore = questions.reduce((total, q, i) => {
     if (q.type === 'MCQ' && answers[i] === q.answer) return total + 1;
     return total;
@@ -166,90 +119,114 @@ const QuestionsPanelPrac = ({
   const isLastQuestion = currentIndex === questions.length - 1;
   const isCodingQuestion = q?.type === 'CODING';
 
-  // ── Loading state ─────────────────────────────────────────────────────────
+  const difficultyConfig = {
+    easy:   { color: '#22C55E', bg: 'rgba(34,197,94,0.1)',   border: 'rgba(34,197,94,0.25)'   },
+    medium: { color: '#F59E0B', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.25)'  },
+    hard:   { color: '#EF4444', bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.25)'   },
+  };
+  const diff = difficultyConfig[difficulty] || difficultyConfig.medium;
+
+  // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <aside className="h-full flex items-center justify-center text-white">
-        <div className="text-center">
-          <div
-            className="w-8 h-8 border-2 border-[#6C63FF] border-t-transparent rounded-full animate-spin mx-auto mb-4"
-          />
-          <p className="text-[#A1A1AA] text-sm">
-            Generating AI Questions for{' '}
-            <span className="text-white font-semibold">{domain}</span>…
+      <aside className="h-full flex items-center justify-center"
+        style={{ background: 'linear-gradient(180deg, #07091a 0%, #0d1128 100%)' }}>
+        <div className="text-center px-8">
+          <div className="relative mx-auto mb-6 w-14 h-14">
+            <div className="absolute inset-0 rounded-full border-2 border-[#6C63FF]/20" />
+            <div className="absolute inset-0 rounded-full border-2 border-t-[#6C63FF] animate-spin" />
+            <div className="absolute inset-2 rounded-full border border-[#9B5CFF]/30 animate-pulse" />
+          </div>
+          <p className="text-[13px] font-semibold text-white/80 tracking-wide mb-1">
+            Generating questions
+          </p>
+          <p className="text-[11px] text-white/35 font-mono">
+            {domain} · {difficulty}
           </p>
         </div>
       </aside>
     );
   }
 
-  // ── Error state ───────────────────────────────────────────────────────────
+  // ── Error ─────────────────────────────────────────────────────────────────
   if (error) {
     return (
-      <aside className="h-full flex items-center justify-center text-red-400 flex-col gap-4">
-        <p className="text-sm">{error}</p>
-        <button
-          onClick={fetchQuestions}
-          className="px-4 py-2 rounded-lg bg-[#6C63FF] text-white text-sm hover:opacity-90 transition-all"
-        >
-          Retry
-        </button>
+      <aside className="h-full flex items-center justify-center flex-col gap-4"
+        style={{ background: 'linear-gradient(180deg, #07091a 0%, #0d1128 100%)' }}>
+        <div className="rounded-2xl border border-red-500/20 bg-red-500/5 px-6 py-5 text-center max-w-xs">
+          <p className="text-red-400 text-sm mb-4">{error}</p>
+          <button onClick={fetchQuestions}
+            className="px-5 py-2 rounded-xl bg-[#6C63FF] text-white text-sm font-semibold hover:bg-[#7b73ff] transition-all">
+            Try Again
+          </button>
+        </div>
       </aside>
     );
   }
 
-  // ── Empty state ───────────────────────────────────────────────────────────
+  // ── Empty ─────────────────────────────────────────────────────────────────
   if (!questions.length) {
     return (
-      <aside className="h-full flex items-center justify-center text-red-400 text-sm">
+      <aside className="h-full flex items-center justify-center text-white/30 text-sm"
+        style={{ background: 'linear-gradient(180deg, #07091a 0%, #0d1128 100%)' }}>
         No questions available.
       </aside>
     );
   }
 
-  // ── Post-submit results view ──────────────────────────────────────────────
+  // ── Post-submit results ───────────────────────────────────────────────────
   if (submitResult) {
     return (
-      <aside className="h-full border-r border-white/10 bg-[#050816]/80 backdrop-blur-xl flex flex-col overflow-hidden">
+      <aside className="h-full flex flex-col overflow-hidden"
+        style={{ background: 'linear-gradient(180deg, #07091a 0%, #0d1128 100%)', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
 
-        {/* Header */}
-        <div className="px-6 py-5 border-b border-white/10 bg-white/5 shrink-0">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-[#A1A1AA] font-semibold">
-            Session Complete
-          </p>
-          <h1 className="mt-1 text-2xl font-bold text-white">{domain}</h1>
-          <p className="text-xs text-[#A1A1AA] mt-0.5 capitalize">
-            {difficulty} difficulty
-          </p>
+        {/* Results header */}
+        <div className="px-6 py-6 shrink-0"
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(108,99,255,0.04)' }}>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-lg">🎯</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#6C63FF]">Session Complete</span>
+          </div>
+          <h1 className="text-xl font-bold text-white mb-1">{domain}</h1>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full"
+              style={{ color: diff.color, background: diff.bg, border: `1px solid ${diff.border}` }}>
+              {difficulty}
+            </span>
+          </div>
         </div>
 
-        {/* Stats cards */}
+        {/* Stats */}
         {submitResult.stats && (
-          <div className="px-6 py-4 border-b border-white/10 shrink-0 grid grid-cols-2 gap-3">
-            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-center">
-              <p className="text-xs text-[#A1A1AA] mb-1">MCQ Score</p>
-              <p className="text-xl font-bold text-amber-400">
-                {submitResult.stats.correctMCQ} / {mcqQuestions.length}
+          <div className="px-5 py-4 shrink-0 grid grid-cols-2 gap-3"
+            style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="rounded-2xl px-4 py-4 text-center"
+              style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)' }}>
+              <p className="text-[10px] text-white/40 uppercase tracking-widest mb-2">MCQ Score</p>
+              <p className="text-2xl font-bold text-amber-400">
+                {submitResult.stats.correctMCQ}
+                <span className="text-sm text-white/30 font-normal"> / {mcqQuestions.length}</span>
               </p>
             </div>
-            <div className="rounded-xl border border-[#6C63FF]/20 bg-[#6C63FF]/10 px-4 py-3 text-center">
-              <p className="text-xs text-[#A1A1AA] mb-1">Coding Attempted</p>
-              <p className="text-xl font-bold text-[#a89eff]">
-                {submitResult.stats.attemptedCoding} / {codingQuestions.length}
+            <div className="rounded-2xl px-4 py-4 text-center"
+              style={{ background: 'rgba(108,99,255,0.07)', border: '1px solid rgba(108,99,255,0.2)' }}>
+              <p className="text-[10px] text-white/40 uppercase tracking-widest mb-2">Coding Done</p>
+              <p className="text-2xl font-bold text-[#a89eff]">
+                {submitResult.stats.attemptedCoding}
+                <span className="text-sm text-white/30 font-normal"> / {codingQuestions.length}</span>
               </p>
             </div>
           </div>
         )}
 
-        {/* AI overall review */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin px-6 py-4">
-          <h3 className="text-xs text-[#6C63FF] font-semibold mb-3 uppercase tracking-widest">
-            🤖 AI Overall Review
-          </h3>
-          <div className="prose prose-invert max-w-none prose-headings:text-white prose-p:text-slate-300 prose-strong:text-white text-sm leading-7">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {submitResult.aiReview}
-            </ReactMarkdown>
+        {/* AI Review */}
+        <div className="flex-1 overflow-y-auto scrollbar-thin px-5 py-5">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-sm">🤖</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#6C63FF]">AI Overall Review</span>
+          </div>
+          <div className="prose prose-invert max-w-none prose-headings:text-white prose-headings:text-sm prose-p:text-white/60 prose-p:text-[13px] prose-p:leading-7 prose-strong:text-white prose-li:text-white/60 prose-li:text-[13px]">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{submitResult.aiReview}</ReactMarkdown>
           </div>
         </div>
       </aside>
@@ -257,81 +234,110 @@ const QuestionsPanelPrac = ({
   }
 
   // ── Main render ───────────────────────────────────────────────────────────
-  return (
-    <aside className="h-full min-h-0 border-r border-white/10 bg-[#050816]/80 backdrop-blur-xl flex flex-col overflow-hidden">
+  const answeredCount = questions.filter((qItem, idx) =>
+    qItem.type === 'MCQ' ? !!answers[idx] : !!(codes[idx]?.trim())
+  ).length;
 
-      {/* Header */}
-      <div className="px-6 py-5 border-b border-white/10 bg-white/5 shrink-0">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.24em] text-[#A1A1AA] font-semibold">
-              Practice Workspace
-            </p>
-            <h1 className="mt-1 text-2xl font-bold text-white whitespace-nowrap">
-              {domain}
-            </h1>
-            <p className="text-xs text-[#A1A1AA] mt-0.5 capitalize">
-              {difficulty} difficulty
-            </p>
+  return (
+    <aside className="h-full min-h-0 flex flex-col overflow-hidden"
+        style={{background: 'rgba(7, 9, 26, 0.55)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderRight: '1px solid rgba(255,255,255,0.08)', }}>
+
+      {/* ── Top header ── */}
+      <div className="px-5 py-4 shrink-0"
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.015)' }}>
+
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">Practice</span>
+              <span className="w-1 h-1 rounded-full bg-white/15" />
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] px-2 py-0.5 rounded-full"
+                style={{ color: diff.color, background: diff.bg, border: `1px solid ${diff.border}` }}>
+                {difficulty}
+              </span>
+            </div>
+            <h1 className="text-[17px] font-bold text-white truncate">{domain}</h1>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
+          {/* Progress ring + count */}
+          <div className="shrink-0 flex flex-col items-end gap-1.5">
+            <div className="flex items-center gap-1.5 text-[11px] font-mono text-white/40">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
+              {answeredCount}/{questions.length}
+            </div>
             {mcqQuestions.length > 0 && (
-              <div className="hidden sm:flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-4 py-2 text-sm text-amber-400 font-semibold">
-                MCQ: {mcqScore}/{mcqQuestions.length}
+              <div className="text-[11px] font-semibold px-2.5 py-1 rounded-full"
+                style={{ color: '#F59E0B', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                MCQ {mcqScore}/{mcqQuestions.length}
               </div>
             )}
-            <div className="hidden sm:flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-mono text-[#A1A1AA]">
-              <span className="inline-block h-2 w-2 rounded-full bg-[#22C55E] animate-pulse" />
-              {questions.length} Qs
-            </div>
           </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="mt-3 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+          <div className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${questions.length ? (answeredCount / questions.length) * 100 : 0}%`,
+              background: 'linear-gradient(90deg, #6C63FF, #9B5CFF)',
+            }} />
         </div>
       </div>
 
-      {/* Question number pills */}
-      <div className="px-4 pt-4 shrink-0 flex gap-2 flex-wrap">
-        {questions.map((qItem, idx) => {
-          const answered =
-            qItem.type === 'MCQ'
-              ? !!answers[idx]
-              : !!(codes[idx]?.trim());
+      {/* ── Question pills ── */}
+      <div className="px-5 pt-4 pb-3 shrink-0">
+        <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/25 mb-2.5">Questions</p>
+        <div className="flex gap-1.5 flex-wrap">
+          {questions.map((qItem, idx) => {
+            const answered = qItem.type === 'MCQ' ? !!answers[idx] : !!(codes[idx]?.trim());
+            const isCurrent = idx === currentIndex;
+            const isCoding = qItem.type === 'CODING';
 
-          return (
-            <button
-              key={idx}
-              onClick={() => onNavigate(idx)}
-              title={qItem.type}
-              className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all
-                ${
-                  idx === currentIndex
-                    ? 'bg-[#6C63FF] text-white shadow-[0_0_12px_rgba(108,99,255,0.4)]'
+            return (
+              <button key={idx} onClick={() => onNavigate(idx)}
+                title={qItem.type}
+                className="w-8 h-8 rounded-lg text-[11px] font-bold transition-all duration-200 relative"
+                style={{
+                  background: isCurrent
+                    ? 'linear-gradient(135deg, #6C63FF, #9B5CFF)'
                     : answered
-                    ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                    : 'bg-white/5 text-[#A1A1AA] border border-white/10 hover:bg-white/10'
-                }`}
-            >
-              {answered ? '✓' : idx + 1}
-            </button>
-          );
-        })}
+                    ? 'rgba(34,197,94,0.12)'
+                    : 'rgba(255,255,255,0.04)',
+                  border: isCurrent
+                    ? '1px solid rgba(108,99,255,0.5)'
+                    : answered
+                    ? '1px solid rgba(34,197,94,0.25)'
+                    : '1px solid rgba(255,255,255,0.08)',
+                  color: isCurrent ? '#fff' : answered ? '#4ade80' : 'rgba(255,255,255,0.35)',
+                  boxShadow: isCurrent ? '0 0 12px rgba(108,99,255,0.3)' : 'none',
+                }}>
+                {answered && !isCurrent ? '✓' : idx + 1}
+                {/* coding dot indicator */}
+                {isCoding && !isCurrent && (
+                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#6C63FF]" />
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Question type badge */}
-      <div className="px-4 pt-3 shrink-0">
-        <span
-          className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full border ${
-            isCodingQuestion
-              ? 'bg-[#6C63FF]/15 border-[#6C63FF]/30 text-[#a89eff]'
-              : 'bg-amber-500/10 border-amber-500/25 text-amber-400'
-          }`}
-        >
+      {/* ── Question type badge ── */}
+      <div className="px-5 pb-2 shrink-0">
+        <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.15em] px-3 py-1.5 rounded-full"
+          style={{
+            background: isCodingQuestion ? 'rgba(108,99,255,0.1)' : 'rgba(245,158,11,0.08)',
+            border: isCodingQuestion ? '1px solid rgba(108,99,255,0.25)' : '1px solid rgba(245,158,11,0.2)',
+            color: isCodingQuestion ? '#a89eff' : '#F59E0B',
+          }}>
           {isCodingQuestion ? '⌨ Coding' : '◉ MCQ'}
+          <span className="opacity-50">·</span>
+          <span className="opacity-60">Q{currentIndex + 1}</span>
         </span>
       </div>
 
-      {/* Current question card */}
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-4 py-3">
+      {/* ── Question card ── */}
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-5 pb-3">
         <QuestionCard
           question={q}
           index={currentIndex + 1}
@@ -340,65 +346,59 @@ const QuestionsPanelPrac = ({
           type={q?.type}
         />
 
-        {/* AI hint panel — only appears after Analyze on a CODING question */}
+        {/* AI hint */}
         {hint && (
-          <div className="mt-4 rounded-xl border border-[#6C63FF]/25 bg-[#6C63FF]/08 p-4">
-            <h3 className="text-xs text-[#6C63FF] font-semibold mb-2 uppercase tracking-widest">
-              🤖 AI Hints
-            </h3>
-            <div className="prose prose-invert max-w-none prose-headings:text-white prose-p:text-slate-300 prose-strong:text-white text-xs leading-6">
+          <div className="mt-3 rounded-2xl p-4"
+            style={{ background: 'rgba(108,99,255,0.06)', border: '1px solid rgba(108,99,255,0.2)' }}>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-sm">🤖</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#6C63FF]">AI Hints</span>
+            </div>
+            <div className="prose prose-invert max-w-none prose-p:text-white/60 prose-p:text-[12px] prose-p:leading-6 prose-strong:text-white prose-li:text-white/60 prose-li:text-[12px] prose-headings:text-white prose-headings:text-[13px]">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{hint}</ReactMarkdown>
             </div>
           </div>
         )}
       </div>
 
-      {/* Navigation + action buttons */}
-      <div className="px-4 py-4 border-t border-white/10 shrink-0 flex flex-col gap-3">
+      {/* ── Bottom actions ── */}
+      <div className="px-5 py-4 shrink-0"
+        style={{ borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)' }}>
 
-        {/* Prev / Next navigation */}
-        <div className="flex gap-3">
-          <button
-            disabled={currentIndex === 0}
-            onClick={() => onNavigate(currentIndex - 1)}
-            className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2 text-sm text-[#A1A1AA]
-            hover:bg-white/10 hover:text-white transition-all disabled:opacity-30"
-          >
-            ← Previous
+        {/* Prev / Next */}
+        <div className="flex gap-2 mb-2.5">
+          <button disabled={currentIndex === 0} onClick={() => onNavigate(currentIndex - 1)}
+            className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all disabled:opacity-25"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}>
+            ← Prev
           </button>
-          <button
-            disabled={isLastQuestion}
-            onClick={() => onNavigate(currentIndex + 1)}
-            className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2 text-sm text-[#A1A1AA]
-            hover:bg-white/10 hover:text-white transition-all disabled:opacity-30"
-          >
+          <button disabled={isLastQuestion} onClick={() => onNavigate(currentIndex + 1)}
+            className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all disabled:opacity-25"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}>
             Next →
           </button>
         </div>
 
-        {/* AI Analyze — only for CODING questions */}
+        {/* AI Analyze — coding only */}
         {isCodingQuestion && (
-          <button
-            onClick={handleAnalyze}
-            disabled={analyzing}
-            className="w-full rounded-xl border border-[#6C63FF]/30 bg-[#6C63FF]/10 py-2.5 text-sm font-semibold text-[#a89eff]
-            hover:bg-[#6C63FF]/20 transition-all disabled:opacity-50"
-          >
+          <button onClick={handleAnalyze} disabled={analyzing}
+            className="w-full py-2.5 rounded-xl text-[13px] font-semibold transition-all mb-2.5 disabled:opacity-40"
+            style={{ background: 'rgba(108,99,255,0.08)', border: '1px solid rgba(108,99,255,0.22)', color: '#a89eff' }}>
             {analyzing ? '🤖 Analyzing…' : '🤖 AI Analyze'}
           </button>
         )}
 
-        {/* Submit — only on last question (Q10) */}
+        {/* Submit */}
         {isLastQuestion && (
-          <button
-            onClick={handleFinalSubmit}
-            disabled={submitting}
-            className="w-full rounded-xl bg-[#22C55E] py-2.5 text-sm font-bold text-white
-            hover:bg-[#16a34a] transition-all
-            shadow-[0_0_0_1px_rgba(34,197,94,0.16),_0_10px_30px_rgba(0,0,0,0.28)]
-            disabled:opacity-50"
-          >
-            {submitting ? 'Submitting…' : '✓ Submit All 10 Questions'}
+          <button onClick={handleFinalSubmit} disabled={submitting}
+            className="w-full py-3 rounded-xl text-[13px] font-bold transition-all disabled:opacity-40"
+            style={{
+              background: submitting ? 'rgba(34,197,94,0.3)' : 'linear-gradient(135deg, #22C55E, #16a34a)',
+              border: '1px solid rgba(34,197,94,0.3)',
+              color: '#fff',
+              boxShadow: submitting ? 'none' : '0 4px 20px rgba(34,197,94,0.2)',
+            }}>
+            {submitting ? 'Submitting…' : '✓ Submit All Questions'}
           </button>
         )}
       </div>

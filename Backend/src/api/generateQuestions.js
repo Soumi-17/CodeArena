@@ -32,11 +32,12 @@ const CODING_DOMAINS = [
 
 export const isCodingDomain = (domain = "") => {
   const lower = domain.trim().toLowerCase();
-  return CODING_DOMAINS.some((d) => lower === d || lower.includes(d));
+  return CODING_DOMAINS.some((d) => lower === d);
 };
 
 // ============================
 // LANGUAGE DETECTION
+// (only used when isCodingDomain is true)
 // ============================
 
 const detectLanguage = (domain = "") => {
@@ -44,28 +45,14 @@ const detectLanguage = (domain = "") => {
 
   if (text.includes("sql")) return "SQL";
   if (text.includes("dsa") || text.includes("data structure")) return "Python";
-  if (
-    text.includes("javascript") ||
-    text.includes("js") ||
-    text.includes("node") ||
-    text.includes("frontend") ||
-    text.includes("react")
-  )
-    return "JavaScript";
+  if (text.includes("javascript") || text.includes("js")) return "JavaScript";
   if (text.includes("typescript") || text.includes("ts")) return "TypeScript";
-  if (text.includes("python") || text.includes("ml") || text.includes("ai"))
-    return "Python";
+  if (text.includes("python") || text.includes("ml") || text.includes("ai")) return "Python";
   if (text.includes("java") && !text.includes("javascript")) return "Java";
   if (text.includes("c++") || text.includes("cpp")) return "C++";
   if (text.includes("c#") || text.includes(".net")) return "C#";
   if (text.includes("php") || text.includes("laravel")) return "PHP";
   if (text.includes("golang") || text.includes("go developer")) return "Go";
-  if (
-    text.includes("backend") ||
-    text.includes("full stack") ||
-    text.includes("software engineer")
-  )
-    return "JavaScript";
 
   return "Python";
 };
@@ -117,14 +104,7 @@ const removeDuplicateQuestions = (questions = []) => {
 // CREATE PROMPT
 // ============================
 
-const createPrompt = ({
-  domain,
-  difficulty,
-  type,
-  count,
-  language,
-  starterCode,
-}) => {
+const createPrompt = ({ domain, difficulty, type, count, language, starterCode }) => {
   if (type === "CODING") {
     return `
 Generate ${count} unique ${difficulty} coding interview questions for ${domain}.
@@ -145,7 +125,7 @@ Format:
     "type": "CODING"
   }
 ]
-`;
+`.trim();
   }
 
   return `
@@ -156,107 +136,90 @@ Rules:
 - No markdown
 - No explanations
 - Every question must have exactly 4 options
+- The "answer" field must exactly match one of the options
 
 Format:
 [
   {
     "question": "",
-    "options": [],
+    "options": ["", "", "", ""],
     "answer": "",
     "type": "MCQ"
   }
 ]
-`;
+`.trim();
 };
 
 // ============================
-// CALL AI
+// CALL AI — with retry + backoff
 // ============================
 
-const generateBatch = async ({ prompt }) => {
-  const response = await openrouter.post("/chat/completions", {
-    model: "openrouter/free",
-    messages: [
-      {
-        role: "system",
-        content:
-          "Return ONLY valid JSON array. No markdown, no backticks, no explanation.",
-      },
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
-    temperature: 0.3,
-    top_p: 0.8,
-    max_tokens: 1200,
-  });
+const generateBatch = async ({ prompt }, retries = 2) => {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await openrouter.post("/chat/completions", {
+        model: "openrouter/free",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Return ONLY a valid JSON array. No markdown, no backticks, no explanation. Every object must be complete.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: 0.3,
+        top_p: 0.8,
+        max_tokens: 2000,
+      });
 
-  const raw =
-    response.data?.choices?.[0]?.message?.content || "[]";
+      const raw = response.data?.choices?.[0]?.message?.content || "[]";
+      console.log("RAW RESPONSE:", raw);
+      const cleaned = raw.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(cleaned);
 
-  try {
-    const cleaned = raw.replace(/```json|```/g, "").trim();
-    return JSON.parse(cleaned);
-  } catch (error) {
-    console.log("INVALID JSON:", raw);
-    return [];
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+
+    } catch (error) {
+      console.log(`Batch attempt ${attempt + 1} failed:`, error.message);
+      if (attempt === retries) return [];
+      await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+    }
   }
+  return [];
 };
 
 // ============================
 // GENERATE QUESTIONS
-// Always returns 10 questions:
-//   Coding domains  → 7 CODING + 3 MCQ
-//   Other domains   → 10 MCQ
+// Coding domains  → 7 CODING + 3 MCQ
+// Other domains   → 10 MCQ
 // ============================
 
-export const generateQuestions = async ({ domain, difficulty }) => {
+export const generatePracticeQuestions = async ({ domain, difficulty }) => {
   try {
     const coding = isCodingDomain(domain);
-    const language = detectLanguage(domain);
-    const starterCode = getStarterCode(language);
-
     let allQuestions = [];
 
     if (coding) {
-      // ── 7 CODING + 3 MCQ ────────────────────────────────────────────────
+      // language + starterCode only needed for coding questions
+      const language = detectLanguage(domain);
+      const starterCode = getStarterCode(language);
+
       const [codingResults, mcqResults] = await Promise.all([
-
-        // 7 coding questions in batches: 2 + 2 + 2 + 1
-        (async () => {
-          const batches = [2, 2, 2, 1];
-          const results = await Promise.all(
-            batches.map((count) =>
-              generateBatch({
-                prompt: createPrompt({
-                  domain,
-                  difficulty,
-                  type: "CODING",
-                  count,
-                  language,
-                  starterCode,
-                }),
-              })
-            )
-          );
-          return results.flat();
-        })(),
-
-        // 3 MCQ questions in one batch
         generateBatch({
           prompt: createPrompt({
-            domain,
-            difficulty,
-            type: "MCQ",
-            count: 3,
-            language,
-            starterCode,
+            domain, difficulty, type: "CODING", count: 7, language, starterCode,
+          }),
+        }),
+        generateBatch({
+          prompt: createPrompt({
+            domain, difficulty, type: "MCQ", count: 3, language, starterCode,
           }),
         }),
       ]);
 
-      // Tag types, cap at target counts
       const codingTagged = codingResults
         .map((q) => ({ ...q, type: "CODING", language, starterCode }))
         .slice(0, 7);
@@ -265,27 +228,26 @@ export const generateQuestions = async ({ domain, difficulty }) => {
         .map((q) => ({ ...q, type: "MCQ" }))
         .slice(0, 3);
 
-      // Layout: Q1–Q7 = CODING, Q8–Q10 = MCQ
+      // Q1–Q7 CODING, Q8–Q10 MCQ
       allQuestions = [...codingTagged, ...mcqTagged];
 
     } else {
-      // ── 10 MCQ only ─────────────────────────────────────────────────────
-      const batches = [2, 2, 2, 2, 2];
-      const results = await Promise.all(
-        batches.map((count) =>
-          generateBatch({
-            prompt: createPrompt({
-              domain,
-              difficulty,
-              type: "MCQ",
-              count,
-              language,
-              starterCode,
-            }),
-          })
-        )
-      );
-      allQuestions = results.flat().map((q) => ({ ...q, type: "MCQ" }));
+      // MCQ only — no language or starter code needed
+      const batch1 = await generateBatch({
+        prompt: createPrompt({
+          domain, difficulty, type: "MCQ", count: 5,
+          language: "", starterCode: "",
+        }),
+      });
+
+      const batch2 = await generateBatch({
+        prompt: createPrompt({
+          domain, difficulty, type: "MCQ", count: 5,
+          language: "", starterCode: "",
+        }),
+      });
+
+      allQuestions = [...batch1, ...batch2].map((q) => ({ ...q, type: "MCQ" }));
     }
 
     const unique = removeDuplicateQuestions(allQuestions);

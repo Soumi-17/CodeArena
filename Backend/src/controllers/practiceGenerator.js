@@ -1,4 +1,4 @@
-import { generatePracticeQuestions } from "../api/practiceOpenrouter.js";
+import { generatePracticeQuestions } from "../api/generateQuestions.js";
 
 export const generatePracticeController = async (req, res) => {
   try {

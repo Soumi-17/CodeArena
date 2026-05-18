@@ -3,6 +3,8 @@ import { useLocation } from 'react-router-dom';
 import QuestionsPanelPrac from '../../components/QuestionsPanelPrac';
 import CodeEditorPrac from '../../components/CodeEditorPrac';
 import Header from '../../components/Header';
+import SoftBackdropNew from "../../components/SoftBackdropNew";
+
 
 const PracticeSet = () => {
   const { state: navState } = useLocation();
@@ -43,46 +45,48 @@ const PracticeSet = () => {
   const showEditor = currentQuestion?.type === 'CODING' && !isSubmitted;
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
-      <Header />
+    <>
+      <SoftBackdropNew />
+      <div className="h-screen flex flex-col overflow-hidden relative z-10">
+        
+        <Header />
 
-      <div
-        className="flex-1 overflow-hidden text-white font-['Inter'] antialiased"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: showEditor ? '560px minmax(0,1fr)' : '1fr',
-          background: `
-            radial-gradient(circle at top right, rgba(108,99,255,0.08), transparent 28%),
-            linear-gradient(180deg, #050816 0%, #0b1120 100%)
-          `,
-        }}
-      >
-        <QuestionsPanelPrac
-          domain={domain}
-          difficulty={difficulty}
-          questions={questions}
-          currentIndex={currentIndex}
-          answers={answers}
-          onQuestionsLoaded={handleQuestionsLoaded}
-          onNavigate={setCurrentIndex}
-          onSelectAnswer={handleSelectAnswer}
-          codes={codes}
-          outputs={outputs}
-          onSubmitComplete={() => setIsSubmitted(true)}  // ← new
-        />
-
-        {showEditor && (
-          <CodeEditorPrac
-            currentQuestion={currentQuestion}
+        <div
+          className="flex-1 overflow-hidden text-white font-['Inter'] antialiased"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: showEditor ? '560px minmax(0,1fr)' : '1fr',
+            background: `transparent`,
+          }}
+        >
+          <QuestionsPanelPrac
+            domain={domain}
+            difficulty={difficulty}
+            questions={questions}
             currentIndex={currentIndex}
-            code={codes[currentIndex] || currentQuestion?.starterCode || ''}
-            output={outputs[currentIndex] || ''}
-            onCodeChange={(code) => handleCodeChange(currentIndex, code)}
-            onOutputChange={(output) => handleOutputChange(currentIndex, output)}
+            answers={answers}
+            onQuestionsLoaded={handleQuestionsLoaded}
+            onNavigate={setCurrentIndex}
+            onSelectAnswer={handleSelectAnswer}
+            codes={codes}
+            outputs={outputs}
+            onSubmitComplete={() => setIsSubmitted(true)}  // ← new
           />
-        )}
+
+          {showEditor && (
+            <CodeEditorPrac
+              currentQuestion={currentQuestion}
+              currentIndex={currentIndex}
+              code={codes[currentIndex] || currentQuestion?.starterCode || ''}
+              output={outputs[currentIndex] || ''}
+              onCodeChange={(code) => handleCodeChange(currentIndex, code)}
+              onOutputChange={(output) => handleOutputChange(currentIndex, output)}
+            />
+          )}
+        </div>
       </div>
-    </div>
+    
+    </>
   );
 };
 
